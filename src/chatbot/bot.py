@@ -1,24 +1,21 @@
-# %%
+# Standard library imports
+import os
 import sys
-import langchain
 import json
 
-
-# %%
-import os
+# External library imports
+import pandas as pd
 import requests
 from bs4 import BeautifulSoup
+from dotenv import load_dotenv, find_dotenv
 from urllib.parse import urljoin
 
+# langchain imports
+import langchain
 from langchain import OpenAI
 from langchain.callbacks.manager import CallbackManager
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.chains import ConversationalRetrievalChain
-from langchain.chat_models import ChatOpenAI
-from langchain.chains.conversational_retrieval.prompts import (
-    CONDENSE_QUESTION_PROMPT,
-    QA_PROMPT,
-)
 from langchain.chains.llm import LLMChain
 from langchain.chains.question_answering import load_qa_chain
 from langchain.document_loaders import TextLoader
@@ -26,8 +23,16 @@ from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.llms import OpenAI
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.vectorstores import Pinecone
+from langchain.chains.conversational_retrieval.prompts import (
+    CONDENSE_QUESTION_PROMPT,
+    QA_PROMPT,
+)
 
-from dotenv import load_dotenv, find_dotenv
+# langchain community imports
+from langchain_community.document_loaders import DataFrameLoader
+
+# pinecone import
+import pinecone
 
 
 class CustomScraper:
@@ -79,20 +84,14 @@ class CustomScraper:
 
 
 # Example usage
-if __name__ == "__main__":
-    base_url1 = "http://support.apexsystemsinc.com/kb/faq.php?cid=1"
-    scraper = CustomScraper(base_url1)
-    scraper.scrape_and_download_links()
 
-    base_url2 = "http://support.apexsystemsinc.com/kb/faq.php?cid=2"
-    scraper = CustomScraper(base_url2)
-    scraper.scrape_and_download_links()
+base_url1 = "http://support.apexsystemsinc.com/kb/faq.php?cid=1"
+scraper = CustomScraper(base_url1)
+scraper.scrape_and_download_links()
 
-
-# %%
-import os
-from bs4 import BeautifulSoup
-import pandas as pd
+base_url2 = "http://support.apexsystemsinc.com/kb/faq.php?cid=2"
+scraper = CustomScraper(base_url2)
+scraper.scrape_and_download_links()
 
 
 class DataExtractor:
@@ -145,40 +144,34 @@ storage_dir = "./pages"  # Update this path to where your HTML files are stored
 extractor = DataExtractor(storage_dir)
 df = extractor.extract_data_to_dataframe()
 print(df)
+# Environment variable management
+load_dotenv(find_dotenv())
 
-# %%
-from langchain_community.document_loaders import DataFrameLoader
-
+# Document loading
 loader = DataFrameLoader(df, page_content_column="Information")
-
-# %%
 documents = loader.load()
 
-
-load_dotenv(find_dotenv())
+# Document processing
 text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
 docs = text_splitter.split_documents(documents)
+
+# Embeddings
 embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
 
-# %%
-import pinecone
-
+# Pinecone setup
 pc = pinecone.Pinecone(
     api_key=os.getenv("PINECONE_API_KEY"), environment=os.getenv("PINECONE_ENV")
 )
 index_name = "apex"
-
-# %%
 docsearch = Pinecone.from_documents(docs, embeddings, index_name=index_name)
 
-# %%
-# initialize the LLM
+# Initialize LLM
 llm = OpenAI(model_name="gpt-4", temperature=0)
-# the non-streaming LLM for questions
+
+# Question generator setup
 question_generator = LLMChain(llm=llm, prompt=CONDENSE_QUESTION_PROMPT)
 
-# %%
-# astreaming llm for the docs
+# Streaming LLM setup
 streaming_llm = OpenAI(
     streaming=True,
     callback_manager=CallbackManager([StreamingStdOutCallbackHandler()]),
@@ -187,19 +180,17 @@ streaming_llm = OpenAI(
 )
 doc_chain = load_qa_chain(streaming_llm, chain_type="stuff", prompt=QA_PROMPT)
 
-# initialize ConversationalRetrievalChain chabot
+# Conversational Retrieval Chain setup
 qa = ConversationalRetrievalChain(
     retriever=docsearch.as_retriever(),
     combine_docs_chain=doc_chain,
     question_generator=question_generator,
 )
 
-# %%
-# create an array to store the chat history.
+# Interaction loop
 chat_history = []
 question = input("Hi! Ask me a question about Apex FAQ. ")
 
-# create a loop to ask the chatbot questions
 while True:
     result = qa({"question": question, "chat_history": chat_history})
     print("\n")
